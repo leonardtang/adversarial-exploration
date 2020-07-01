@@ -1,4 +1,5 @@
 from __future__ import print_function
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -52,17 +53,30 @@ def fgsm_attack(image, epsilon, data_grad):
     # Getting signs of loss gradient w.r.t. image
     sign_data_grad = data_grad.sign()
     perturbation = epsilon*sign_data_grad
-    perturbed_image = np.ndarray(shape=(1, 1, data_grad.size()[2], data_grad.size()[3]), dtype=float)
-    perturbed_image = torch.from_numpy(perturbed_image).float()  # Model parameters must be floats
+    # perturbed_image = np.ndarray(shape=(1, 1, data_grad.size()[2], data_grad.size()[3]), dtype=float)
+    # perturbed_image = torch.from_numpy(perturbed_image).float()  # Model parameters must be floats
 
     # for i in range(list(data_grad.size())[2]):
     #     for j in range(list(data_grad.size())[3]):
     #         if image[0][0][i][j] != 0:
     #             perturbed_image[0][0][i][j] = image[0][0][i][j] + perturbation[0][0][i][j]
 
-    nonzero_idx = np.nonzero(image)  # 4D array for Tensor index
-    for idx in nonzero_idx:
-        perturbed_image[0][0][idx[2]][idx[3]] = image[0][0][idx[2]][idx[3]] + perturbation[0][0][idx[2]][idx[3]]
+    # nonzero_idx = np.nonzero(image) 4D array for Tensor index
+    # for idx in nonzero_idx:
+    #     perturbed_image[0][0][idx[2]][idx[3]] = image[0][0][idx[2]][idx[3]] + perturbation[0][0][idx[2]][idx[3]]
+
+    # image = torch.flatten(image)
+    # nonzero_idx = torch.nonzero(image)
+    # perturbation = np.ndarray.flatten(np.ndarray(perturbation))
+    # perturbation[nonzero_idx] = 0
+    # image.reshape(1, 1, 28, 28)
+    # image = torch.from_numpy(image).float()
+    # perturbation(1, 1, 28, 28)
+    # perturbation = torch.from_numpy(perturbation).float()
+    # perturbed_image = perturbation + image
+
+    perturbation = perturbation.masked_fill(image != 0, 0)
+    perturbed_image = image + perturbation
 
     # Adding clipping to maintain [0,1] range
     perturbed_image = torch.clamp(perturbed_image, 0, 1)
@@ -71,6 +85,8 @@ def fgsm_attack(image, epsilon, data_grad):
 
 
 def test(model, device, test_loader, epsilon):
+
+    since = time.time()
 
     # Accuracy counter
     correct = 0
@@ -87,7 +103,7 @@ def test(model, device, test_loader, epsilon):
 
         # Forward pass the data through the model
         output = model(data)
-        init_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
+        init_pred = output.max(1, keepdim=True)[1]  # Get the index of the max log-probability
 
         # If the initial prediction is wrong, dont bother attacking, just move on
         if init_pred.item() != target.item():
@@ -107,7 +123,7 @@ def test(model, device, test_loader, epsilon):
 
         # Call FGSM Attack
         perturbed_data = fgsm_attack(data, epsilon, data_grad)  # image, eps, gradient
-        perturbed_data.to(device)
+        perturbed_data = perturbed_data.to(device)
 
         # Re-classify the perturbed image
         output = model(perturbed_data)
@@ -128,7 +144,8 @@ def test(model, device, test_loader, epsilon):
 
     # Calculate final accuracy for this epsilon
     final_acc = correct/float(len(test_loader))
-    print("Epsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct, len(test_loader), final_acc))
+    print("Epsilon: {}\tTest Accuracy = {} / {} = {}\t \tTime Elapsed = {}".format(
+        epsilon, correct, len(test_loader), final_acc, time.time() - since))
 
     # Return the accuracy and an adversarial example
     return final_acc, adv_examples
