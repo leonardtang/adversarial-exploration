@@ -36,11 +36,16 @@ test_loader = torch.utils.data.DataLoader(datasets.MNIST('../data', train=False,
                                           batch_size=1, shuffle=True)
 
 print("CUDA Available: ", torch.cuda.is_available())
-device = torch.device("cuda" if (use_cuda and torch.cuda.is_available()) else "cpu")
+device = torch.device("cuda:0" if (use_cuda and torch.cuda.is_available()) else "cpu")
 
 model = Net().to(device)
 model.load_state_dict(torch.load(pretrained_model, map_location='cpu'))
 model.eval()
+
+# Multiple GPUs
+if torch.cuda.device_count() > 1:
+    model = nn.DataParallel(model)
+    print("Multi-GPU")
 
 
 def fgsm_attack(image, epsilon, data_grad):
