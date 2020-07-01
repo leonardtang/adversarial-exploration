@@ -107,6 +107,7 @@ def test(model, device, test_loader, epsilon):
 
         # Call FGSM Attack
         perturbed_data = fgsm_attack(data, epsilon, data_grad)  # image, eps, gradient
+        perturbed_data.to(device)
 
         # Re-classify the perturbed image
         output = model(perturbed_data)
