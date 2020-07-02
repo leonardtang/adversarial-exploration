@@ -49,10 +49,8 @@ model.eval()
 #     print("Multi-GPU")
 
 
-def fgsm_attack(image, epsilon, data_grad):
-    # Getting signs of loss gradient w.r.t. image
-    sign_data_grad = data_grad.sign()
-    perturbation = epsilon*sign_data_grad
+def fgsm_attack(image, epsilon, data_grad, context=False):
+
     # perturbed_image = np.ndarray(shape=(1, 1, data_grad.size()[2], data_grad.size()[3]), dtype=float)
     # perturbed_image = torch.from_numpy(perturbed_image).float()  # Model parameters must be floats
 
@@ -75,12 +73,20 @@ def fgsm_attack(image, epsilon, data_grad):
     # perturbation = torch.from_numpy(perturbation).float()
     # perturbed_image = perturbation + image
 
-    perturbation = perturbation.masked_fill(image != 0, 0)
-    perturbed_image = image + perturbation
+    if context:
+        """ Only perturbing context """
+        # Getting signs of loss gradient w.r.t. image
+        sign_data_grad = data_grad.sign()
+        perturbation = epsilon * sign_data_grad
+        perturbation = perturbation.masked_fill(image != 0, 0)
+        perturbed_image = image + perturbation
 
-    # Adding clipping to maintain [0,1] range
+    else:
+        """ Traditional approach """
+        sign_data_grad = data_grad.sign()
+        perturbed_image = image + epsilon * sign_data_grad
+
     perturbed_image = torch.clamp(perturbed_image, 0, 1)
-    # Return the perturbed image
     return perturbed_image
 
 
