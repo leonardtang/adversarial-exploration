@@ -1,37 +1,38 @@
 from __future__ import print_function
+from torchvision import datasets, transforms, models
 import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import datasets, transforms
 import numpy as np
 import matplotlib.pyplot as plt
 
 epsilons = [0, .05, .1, .15, .2, .25, .3]
-pretrained_model = "data/lenet_mnist_model.pth"
+pretrained_model = "model/lenet_mnist_model.pth"
 use_cuda = True
 
 
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.conv2_drop = nn.Dropout2d()
-        self.fc1 = nn.Linear(320, 50)
-        self.fc2 = nn.Linear(50, 10)
-
-    def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        x = x.view(-1, 320)
-        x = F.relu(self.fc1(x))
-        x = F.dropout(x, training=self.training)
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
+""" Flow is test without any additional training OR include feature extraction/finetune """
+""" Tasks - 1) Train to see how well pretrained models work with now training 2) Finetune 3) Test again"""
 
 
-# MNIST test dataset
+def set_parameter_requires_grad(model, feature_extracting):
+    """ Feature extraction: no need for backprop through all layers
+        Finetuning: must have backprop (grad) through all layers """
+
+    if feature_extracting:
+        for param in model.parameters():
+            param.requires_grad = False
+
+
+# Setting up ResNet-101 pre-trained on ImageNet
+model = models.resnet101(pretrained=True, progress=True)
+set_parameter_requires_grad(model, feature_extracting=True)  # Set all layers to not require grad
+num_ftrs = model.fc.in_features
+model.fc = nn.Linear(num_ftrs, 80)  # 80 categories for MS-COCO
+input_size = 224
+
+# COCO 2014 val dataset (using here as test)
 test_loader = torch.utils.data.DataLoader(datasets.MNIST('../data', train=False, download=True,
                                                          transform=transforms.Compose([transforms.ToTensor()])),
                                           batch_size=1, shuffle=True)
@@ -39,7 +40,7 @@ test_loader = torch.utils.data.DataLoader(datasets.MNIST('../data', train=False,
 print("CUDA Available: ", torch.cuda.is_available())
 device = torch.device("cuda:1" if (use_cuda and torch.cuda.is_available()) else "cpu")
 
-model = Net().to(device)
+model = model.to(device)
 model.load_state_dict(torch.load(pretrained_model, map_location='cpu'))
 model.eval()
 
@@ -50,28 +51,6 @@ model.eval()
 
 
 def fgsm_attack(image, epsilon, data_grad, context=False):
-
-    # perturbed_image = np.ndarray(shape=(1, 1, data_grad.size()[2], data_grad.size()[3]), dtype=float)
-    # perturbed_image = torch.from_numpy(perturbed_image).float()  # Model parameters must be floats
-
-    # for i in range(list(data_grad.size())[2]):
-    #     for j in range(list(data_grad.size())[3]):
-    #         if image[0][0][i][j] != 0:
-    #             perturbed_image[0][0][i][j] = image[0][0][i][j] + perturbation[0][0][i][j]
-
-    # nonzero_idx = np.nonzero(image) 4D array for Tensor index
-    # for idx in nonzero_idx:
-    #     perturbed_image[0][0][idx[2]][idx[3]] = image[0][0][idx[2]][idx[3]] + perturbation[0][0][idx[2]][idx[3]]
-
-    # image = torch.flatten(image)
-    # nonzero_idx = torch.nonzero(image)
-    # perturbation = np.ndarray.flatten(np.ndarray(perturbation))
-    # perturbation[nonzero_idx] = 0
-    # image.reshape(1, 1, 28, 28)
-    # image = torch.from_numpy(image).float()
-    # perturbation(1, 1, 28, 28)
-    # perturbation = torch.from_numpy(perturbation).float()
-    # perturbed_image = perturbation + image
 
     if context:
         """ Only perturbing context """
@@ -101,13 +80,13 @@ def test(model, device, test_loader, epsilon):
     # Loop over all examples in test set
     for data, target in test_loader:
 
-        # Send the data and label to the device
+        # Send the model and label to the device
         data, target = data.to(device), target.to(device)
 
         # Set requires_grad attribute of tensor. Important for Attack
         data.requires_grad = True
 
-        # Forward pass the data through the model
+        # Forward pass the model through the model
         output = model(data)
         init_pred = output.max(1, keepdim=True)[1]  # Get the index of the max log-probability
 
